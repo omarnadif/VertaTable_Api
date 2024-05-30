@@ -3,7 +3,6 @@ namespace App\Controller;
 
 use App\Entity\Utilisateur;
 use App\Entity\Allergene;
-use App\Entity\Categorie;
 use App\Repository\EntrepriseRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -28,27 +27,29 @@ class SecurityController extends AbstractController
     #[Route('/register', name: 'app_register', methods: ['POST'])]
     public function register(Request $request, EntrepriseRepository $entrepriseRepository): JsonResponse
     {
-        $data = json_decode($request->getContent(), true);
-        $entreprise = $entrepriseRepository->findOneBy(['codeEntreprise' => $data['codeEntreprise']]);
+    $data = json_decode($request->getContent(), true);
+    $entreprise = $entrepriseRepository->findOneBy(['codeEntreprise' => $data['codeEntreprise']]);
 
-        if (!$entreprise) {
-            return new JsonResponse(['error' => 'Entreprise not found'], Response::HTTP_NOT_FOUND);
-        }
-
-        $user = new Utilisateur();
-        $user->setPrenom($data['prenom']);
-        $user->setNom($data['nom']);
-        $user->setEmail($data['email']);
-        $user->setDateDeNaissance(new \DateTime($data['date_de_naissance']));
-        $user->setTelephone($data['telephone']);
-        $user->setEntreprise($entreprise);
-        $user->setPassword($this->passwordHasher->hashPassword($user, $data['password']));
-
-        $this->em->persist($user);
-        $this->em->flush();
-
-        return new JsonResponse(['message' => 'User registration data stored. Proceed to select allergies.', 'userId' => $user->getId()]);
+    if (!$entreprise) {
+        return new JsonResponse(['error' => 'Entreprise non trouvée'], Response::HTTP_NOT_FOUND);
     }
+
+    $user = new Utilisateur();
+    $user->setPrenom($data['prenom']);
+    $user->setNom($data['nom']);
+    $user->setEmail($data['email']);
+    $user->setDateDeNaissance(new \DateTime($data['date_de_naissance']));
+    $user->setTelephone($data['telephone']);
+    $user->setEntreprise($entreprise);
+    $user->setPassword($this->passwordHasher->hashPassword($user, $data['password']));
+
+    $this->em->persist($user);
+    $this->em->flush();
+
+    return new JsonResponse(['message' => 'User registration data stored. Proceed to select allergies.', 'userId' => $user->getId()]);
+    }
+
+    
 
     #[Route('/finalize-registration', name: 'app_finalize_registration', methods: ['POST'])]
     public function finalizeRegistration(Request $request): JsonResponse
