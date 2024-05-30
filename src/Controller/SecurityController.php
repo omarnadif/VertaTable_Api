@@ -1,76 +1,84 @@
 <?php
-
 namespace App\Controller;
 
+use App\Entity\Utilisateur;
+use App\Entity\Allergene;
+use App\Entity\Categorie;
+use App\Repository\EntrepriseRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Security\Http\Authentication\AuthenticationUtils;
-use App\Repository\EntrepriseRepository;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
-use App\Entity\Utilisateur;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 #[Route('/api')]
 class SecurityController extends AbstractController
 {
     private $em;
+    private $passwordHasher;
 
-    public function __construct(EntityManagerInterface $em)
+    public function __construct(EntityManagerInterface $em, UserPasswordHasherInterface $passwordHasher)
     {
         $this->em = $em;
+        $this->passwordHasher = $passwordHasher;
     }
 
-
-    #[Route(path: '/login', name: 'app_login')]
-    public function login(AuthenticationUtils $authenticationUtils): Response
-    {
-        // if ($this->getUser()) {
-        //     return $this->redirectToRoute('target_path');
-        // }
-
-        // get the login error if there is one
-        $error = $authenticationUtils->getLastAuthenticationError();
-        // last username entered by the user
-        $lastUsername = $authenticationUtils->getLastUsername();
-
-        return $this->render('security/login.html.twig', ['last_username' => $lastUsername, 'error' => $error]);
-    }
-
-    #[Route(path: '/logout', name: 'app_logout')]
-    public function logout(): void
-    {
-        throw new \LogicException('This method can be blank - it will be intercepted by the logout key on your firewall.');
-    }
-
-
-    #[Route(path: '/register', name: 'app_register', methods: ['POST'])]
-    public function register(Request $request, EntrepriseRepository $entrepriseRepository): Response
+    #[Route('/register', name: 'app_register', methods: ['POST'])]
+    public function register(Request $request, EntrepriseRepository $entrepriseRepository): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
+        $entreprise = $entrepriseRepository->findOneBy(['codeEntreprise' => $data['codeEntreprise']]);
 
-        $entrepriseId = $data['entreprise_id'];
+        if (!$entreprise) {
+            return new JsonResponse(['error' => 'Entreprise not found'], Response::HTTP_NOT_FOUND);
+        }
 
-        $entreprise = $entrepriseRepository->find($entrepriseId);
+        $user = new Utilisateur();
+        $user->setPrenom($data['prenom']);
+        $user->setNom($data['nom']);
+        $user->setEmail($data['email']);
+        $user->setDateDeNaissance(new \DateTime($data['date_de_naissance']));
+        $user->setTelephone($data['telephone']);
+        $user->setEntreprise($entreprise);
+        $user->setPassword($this->passwordHasher->hashPassword($user, $data['password']));
 
-        $utilisateur = new Utilisateur();
-        $utilisateur->setPrenom($data['prenom']);
-        $utilisateur->setNom($data['nom']);
-        $utilisateur->setEmail($data['email']);
-        $utilisateur->setDateDeNaissance(new \DateTime($data['date_de_naissance']));
-        $utilisateur->setTelephone($data['telephone']);
-        $utilisateur->setEntreprise($entreprise);
-        $utilisateur->setPassword($data['password']);
+        $this->em->persist($user);
+        $this->em->flush();
 
-        //TODO: FAIRE HASHING PASSWORD
-
-        $entityManager = $this->em;
-
-        $entityManager->persist($utilisateur);
-        $entityManager->flush();
-
-        return new Response('Doneee!', Response::HTTP_CREATED);
+        return new JsonResponse(['message' => 'User registration data stored. Proceed to select allergies.', 'userId' => $user->getId()]);
     }
 
+    #[Route('/finalize-registration', name: 'app_finalize_registration', methods: ['POST'])]
+    public function finalizeRegistration(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true);
+        $userId = $data['userId'];
+        $allergies = $data['allergies'];
 
+        $user = $this->em->getRepository(Utilisateur::class)->find($userId);
+
+        if (!$user) {
+            return new JsonResponse(['error' => 'User not found'], Response::HTTP_NOT_FOUND);
+        }
+
+        foreach ($allergies as $allergyId) {
+            $allergy = $this->em->getRepository(Allergene::class)->find($allergyId);
+            if ($allergy) {
+                $user->addAllergene($allergy);
+            }
+        }
+
+        $this->em->persist($user);
+        $this->em->flush();
+
+        return new JsonResponse(['message' => 'User registered successfully with allergies!', 'user' => $user->getId()], Response::HTTP_CREATED);
+    }
+
+    #[Route('/logout', name: 'app_logout', methods: ['POST'])]
+    public function logout(): JsonResponse
+    {
+        return new JsonResponse(['message' => 'Logged out successfully']);
+    }
 }
